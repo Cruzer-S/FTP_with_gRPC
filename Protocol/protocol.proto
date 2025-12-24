@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+//
+service FTPService {
+	//
+  rpc UploadFile(stream File) returns (FileMetaData);
+}
+
+message File {
+  oneof data {
+    string path  = 1;
+    bytes  chunk = 2;
+    bytes  hash  = 3;
+  }
+}
+
+message FileMetaData {
+  string                    path        = 1;
+  uint64                    size        = 2;
+  bytes                     hash        = 3;
+  google.protobuf.Timestamp create_time = 4;
+  google.protobuf.Timestamp modify_time = 5;
+  google.protobuf.Timestamp access_time = 6;
+}

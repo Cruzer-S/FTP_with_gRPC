@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/user/mythos/ftp_with_grpc/Library/ArgParser/build",
+  "command": "/usr/bin/c++  -I/home/user/mythos/ftp_with_grpc/Library/ArgParser/include -std=gnu++2a -o CMakeFiles/ArgParser.dir/source/ArgParser.cpp.o -c /home/user/mythos/ftp_with_grpc/Library/ArgParser/source/ArgParser.cpp",
+  "file": "/home/user/mythos/ftp_with_grpc/Library/ArgParser/source/ArgParser.cpp"
+},
+{
+  "directory": "/home/user/mythos/ftp_with_grpc/Library/ArgParser/build",
+  "command": "/usr/bin/c++  -I/home/user/mythos/ftp_with_grpc/Library/ArgParser/include -std=gnu++2a -o CMakeFiles/ArgParser.dir/source/Argument.cpp.o -c /home/user/mythos/ftp_with_grpc/Library/ArgParser/source/Argument.cpp",
+  "file": "/home/user/mythos/ftp_with_grpc/Library/ArgParser/source/Argument.cpp"
+}
+]
