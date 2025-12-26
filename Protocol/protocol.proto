@@ -1,6 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 //
@@ -10,17 +9,17 @@ service FTPService {
 }
 
 enum UploadFileProgress {
-  UNKNOWN = 0;
-  PATH    = 1;
-  CHUNK   = 2;
-  HASH    = 3;
-  DONE    = 4;
+  UPLOAD_PROGRESS_UNKNOWN = 0;
+  UPLOAD_PROGRESS_PATH    = 1;
+  UPLOAD_PROGRESS_CHUNK   = 2;
+  UPLOAD_PROGRESS_HASH    = 3;
+  UPLOAD_PROGRESS_DONE    = 4;
 };
 
 enum HashType {
-  UNKNOWN = 0;
-  SHA256  = 1;
-  SHA512  = 2;
+  HASH_TYPE_UNKNOWN = 0;
+  HASH_TYPE_SHA256  = 1;
+  HASH_TYPE_SHA512  = 2;
 };
 
 message FileUploadStream {
