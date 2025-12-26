@@ -1,13 +1,15 @@
 #!/bin/bash
 
+BASE=$(realpath ${0})
+echo "BASE: ${BASE}"
+
 if [ "$1" == "Server" ]; then
-	rm -f ./build/Server/test.txt
-	./build/Server/Server --root-dir=./build/Server/ --loglevel 5 127.0.0.1 1584
+	${BASE}/build/Server/Server --root-dir=${BASE} --loglevel 5 127.0.0.1 1584
 elif [ "$1" == "Client" ]; then
-	rm -f /home/user/mythos/ftp_with_grpc/build/Client/Client_copy
-	rm -f /home/user/mythos/ftp_with_grpc/build/Client/Client_copy2
-	cp /home/user/mythos/ftp_with_grpc/build/Client/Client /home/user/mythos/ftp_with_grpc/build/Client/Client_copy
-	./build/Client/Client 127.0.0.1 1584 												\
-						  /home/user/mythos/ftp_with_grpc/build/Client/Client_copy 		\
-						  /home/user/mythos/ftp_with_grpc/build/Client/Client_copy2
+	rm -f "${BASE}/Resources/image.iso"
+	rm -f "${BASE}/Resources/image_copy.iso"
+	cp ${BASE}/build/Client/Client ${BASE}/build/Client/Client_copy
+	${BASE}/build/Client/Client 127.0.0.1 1584 							\
+								${BASE}/Resources/image.iso				\
+								${BASE}/Resources/image_copy.iso
 fi
