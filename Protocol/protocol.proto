@@ -5,23 +5,41 @@ import "google/protobuf/timestamp.proto";
 
 //
 service FTPService {
-	//
-  rpc UploadFile(stream File) returns (FileMetaData);
+  // upload file to server
+  rpc UploadFile(stream FileUploadStream) returns (FileMetaData);
 }
 
-message File {
+enum UploadFileProgress {
+  UNKNOWN = 0;
+  PATH    = 1;
+  CHUNK   = 2;
+  HASH    = 3;
+  DONE    = 4;
+};
+
+enum HashType {
+  UNKNOWN = 0;
+  SHA256  = 1;
+  SHA512  = 2;
+};
+
+message FileUploadStream {
+  UploadFileProgress progress = 1;
   oneof data {
-    string path  = 1;
-    bytes  chunk = 2;
-    bytes  hash  = 3;
+    string path  = 2; // absolute path
+    bytes  chunk = 3; // variable chunk size (default: BUFSIZ)
+    bytes  hash  = 4; // hash method/size followed by HashType
   }
+  uint64   filesize = 5; // total chunk size (based on binary size)
+  HashType hashtype = 6;
 }
 
 message FileMetaData {
   string                    path        = 1;
   uint64                    size        = 2;
   bytes                     hash        = 3;
-  google.protobuf.Timestamp create_time = 4;
-  google.protobuf.Timestamp modify_time = 5;
-  google.protobuf.Timestamp access_time = 6;
+  HashType                  hashtype    = 4;
+  google.protobuf.Timestamp create_time = 5;
+  google.protobuf.Timestamp modify_time = 6;
+  google.protobuf.Timestamp access_time = 7;
 }
