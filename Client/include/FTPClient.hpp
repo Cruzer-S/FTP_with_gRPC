@@ -1,37 +1,38 @@
 #pragma once
 
+#include "ftp_service.grpc.pb.h"
+
 #include <optional>
-#include <fstream>
-#include <variant>
 #include <string>
+#include <tuple>
 
 #include <grpcpp/grpcpp.h>
 
-#include "protocol.grpc.pb.h"
+#include "file.pb.h"
+#include "hash.pb.h"
+#include "ftp_service.pb.h"
 
 class FTPClient
 {
 public:
+	struct Error {
+		int code;
+		std::string message;
+	};
+
+public:
     FTPClient(std::shared_ptr<grpc::Channel> channel);
 
 public:
-    std::variant<FileMetaData, std::string> UploadFile(const std::string_view infile, const std::string_view outpath);
+    std::tuple<bool, FileMetaData, Error> UploadFile(const std::string &infile, const std::string &outpath);
 
 private:
-    struct HashValue { std::string value; };
-    enum ErrorType : bool {
-        SERV_ERR = true,
-        CLNT_ERR = false
-    };
+    using WriterPtr = std::unique_ptr<grpc::ClientWriter<UploadFileRequest>>;
 
-private:
-    using WriterPtr = std::unique_ptr<grpc::ClientWriter<File>>;
-
-    std::optional<std::pair<ErrorType, std::string>> SendFile(WriterPtr& writer, const std::string_view infile, const std::string_view outpath);
-
-    std::optional<std::pair<ErrorType, std::string>> SendPath(WriterPtr& writer, const std::string_view outpath);
-    std::variant<HashValue, std::pair<ErrorType, std::string>> SendChunk(WriterPtr& writer, const std::string_view infile);
-    std::optional<std::pair<ErrorType, std::string>> SendHash(WriterPtr& writer, const HashValue& hash);
+    std::optional<Error> SendFile(WriterPtr& writer, const std::string_view infile, const std::string_view outpath);
+    std::optional<Error> SendPath(WriterPtr& writer, const std::string_view infile, const std::string_view outpath);
+    std::tuple<Hash, Error> SendChunk(WriterPtr& writer, const std::string_view infile);
+    std::optional<Error> SendHash(WriterPtr& writer, const Hash& hash);
 
 private:
     std::unique_ptr<FTPService::Stub> stub_;

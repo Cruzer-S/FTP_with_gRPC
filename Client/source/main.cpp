@@ -1,7 +1,4 @@
-#include <filesystem>
-#include <iostream>
 #include <variant>
-#include <fstream>
 #include <string>
 
 #include <getopt.h>
@@ -12,14 +9,11 @@
 #include <spdlog/fmt/bin_to_hex.h>
 #include <spdlog/spdlog.h>
 
-#include "protocol.grpc.pb.h"
-
-#include "FileMetaData.hpp"
 #include "FTPClient.hpp"
 
 using ArgList = std::map<std::string, std::string>;
 
-std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
+std::pair<bool, std::variant<ArgList, std::string>> ParseArgument(int argc, char* argv[])
 {
         ArgList arglist;
 
@@ -32,19 +26,19 @@ std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
                 for (int opt; (opt = getopt_long(argc, argv, "", options, &optidx)) != -1; ) {
                         switch (opt) {
                         case ':':
-                                return fmt::format("missing argument: {}", static_cast<char>(opt));
+                                return { false, fmt::format("missing argument: {}", static_cast<char>(opt)) };
                         case '?':
-                                return fmt::format("invalid argument: {}", static_cast<char>(opt));
+                                return { false, fmt::format("invalid argument: {}", static_cast<char>(opt)) };
                         }
                 }
         }
         catch (std::exception& e) {
-                return fmt::format("invalid argument: {}", e.what());
+                return { false, fmt::format("invalid argument: {}", e.what()) };
         }
 
         argc -= optind;
         if (argc < 4)
-                return fmt::format("usage: {} <host> <service> <infile> <outpath>", *argv);
+                return { false, fmt::format("usage: {} <host> <service> <infile> <outpath>", *argv) };
 
         argv += optind;
 
@@ -53,25 +47,24 @@ std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
         arglist["infile"] = *argv++;
         arglist["outpath"] = *argv++;
 
-        return arglist;
+        return { true, arglist };
 }
 
 void ShowArgument(const ArgList& arglist)
 {
-        spdlog::info(fmt::format("Host: {}\tService: {}", arglist.at("host"), arglist.at("service")));
-        spdlog::info(fmt::format("infile: {}", arglist.at("infile")));
-        spdlog::info(fmt::format("outpath: {}", arglist.at("outpath")));
+	for (const auto &[name, value]: arglist)
+	    spdlog::info("{}: {}", name, value);
 }
 
 int main(int argc, char* argv[])
 {
-        const auto out = ParseArgument(argc, argv);
-        if (const auto failed_to_parse = std::get_if<std::string>(&out)) {
-                spdlog::error("failed to ParseArgument(): {}", *failed_to_parse);
+	const auto &[success, result] = ParseArgument(argc, argv);
+	if (!success) {
+                spdlog::error("failed to ParseArgument(): {}", std::get<std::string>(result));
                 return 1;
         }
 
-        const ArgList& arglist = std::get<ArgList>(out);
+        const ArgList& arglist = std::get<ArgList>(result);
         ShowArgument(arglist);
 
         const std::string target = fmt::format("{}:{}", arglist.at("host"), arglist.at("service"));
@@ -80,13 +73,13 @@ int main(int argc, char* argv[])
 
         FTPClient client(channel);
 
-        const auto result = client.UploadFile(arglist.at("infile"), arglist.at("outpath"));
-        if (const auto failed_to_upload = std::get_if<std::string>(&result)) {
-                spdlog::error("failed to upload file: {}", *failed_to_upload);
+        const auto [success_upload, metadata, status] = client.UploadFile(arglist.at("infile"), arglist.at("outpath"));
+        if (success_upload) {
+                spdlog::error("failed to upload file: {}", status.message);
                 return 1;
         }
 
-        spdlog::info("file uploaded successfully: \n{}", FileMetaDataToString(std::get<FileMetaData>(result)));
+        spdlog::info("file uploaded successfully: \n{}", metadata.DebugString());
 
         return 0;
 }
