@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-import "Hash.proto";
-import "File.proto";
+import "hash.proto";
+import "file.proto";
 
 service FTPService {
-  rpc UploadFile(stream UploadFileRequest) returns (FileUploadResult);
+  rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse);
 }
 
 message UploadFileRequest {
@@ -14,7 +14,7 @@ message UploadFileRequest {
   HashType hashtype = 4;
 }
 
-message FileUploadResult {
+message UploadFileResponse {
   FileMetaData metadata = 1;
   Hash hash = 2;
 }

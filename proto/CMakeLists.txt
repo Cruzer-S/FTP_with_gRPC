@@ -9,6 +9,7 @@ find_package(gRPC CONFIG REQUIRED)
 set(GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(GEN_SRCS "")
 set(GEN_HDRS "")
+set(LIB_NAME "FTPServiceProto")
 
 file(GLOB PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/*.proto)
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/source/*.cpp)
@@ -42,15 +43,14 @@ foreach(PROTO ${PROTO_FILES})
         )
 endforeach()
 
-add_library(protocol STATIC ${GEN_SRCS} ${GEN_HDRS} ${PROTOCOL_SOURCES})
+add_library(${LIB_NAME} STATIC ${GEN_SRCS} ${GEN_HDRS} ${PROTOCOL_SOURCES})
 
-target_include_directories(protocol
+target_include_directories(${LIB_NAME}
         PUBLIC ${GEN_DIR}
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(protocol PUBLIC
+target_link_libraries(${LIB_NAME} PUBLIC
         gRPC::grpc++
-        stdc++fs
         ${Protobuf_LIBRARIES}
 )
