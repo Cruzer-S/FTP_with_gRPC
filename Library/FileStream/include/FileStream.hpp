@@ -1,31 +1,39 @@
 #pragma once
 
 #include <filesystem>
-#include <optional>
 #include <fstream>
-#include <variant>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <tuple>
 
-class FileStream
-{
+class FileStream {
 public:
-    FileStream(const std::filesystem::path& path);
-    ~FileStream();
+	struct Error {
+		int code = 0;
+		std::string message;
+	};
 
 public:
-    const std::filesystem::path GetPath() const noexcept;
+	explicit FileStream(const std::filesystem::path& path);
+	virtual ~FileStream() = default;
 
 public:
-    virtual std::optional<std::string> Open(const std::ios::openmode& mode);
-    virtual std::optional<std::string> Write(const std::string_view data);
-    virtual std::variant<std::streamsize, std::string> Read(std::string& data);
-    virtual std::variant<std::streamsize, std::string> Read(char* data, const std::streamsize size);
-    virtual std::optional<std::string> Close();
+	const std::filesystem::path& GetPath() const noexcept;
 
-protected:
-    std::string stream_error(const std::ios& stream) const;
+public:
+	virtual std::optional<Error> Open(std::ios::openmode mode) noexcept;
+	virtual std::optional<Error> Write(std::string_view data) noexcept;
+
+	virtual std::tuple<bool, std::streamsize, Error> Read(std::string& data) noexcept;
+	virtual std::tuple<bool, std::streamsize, Error> Read(char* data, std::streamsize size) noexcept;
+
+	virtual std::optional<Error> Close() noexcept;
 
 private:
-    const std::filesystem::path path_;
-    std::fstream stream_;
+	Error stream_error(const std::ios& stream, const char* context) const noexcept;
+
+private:
+	const std::filesystem::path path_;
+	std::fstream stream_;
 };

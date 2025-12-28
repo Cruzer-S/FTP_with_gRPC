@@ -2,92 +2,164 @@
 
 #include "fmt/core.h"
 
+#include "openssl/sha.h"
+#include "openssl/err.h"
+
 namespace {
-    const std::string last_error_string()
-    {
-        char buffer[BUFSIZ];
+	Hasher::Error GetLastError(const std::string &what) noexcept
+	{
+		char buffer[BUFSIZ];
+		
+		const unsigned long err = ERR_get_error();
+		if (err == 0)
+			snprintf(buffer, BUFSIZ, "OpenSSL error (no queued error)");
+		else
+			ERR_error_string_n(err, buffer, BUFSIZ);
 
-        unsigned long err = ERR_get_error();
-        if (err == 0)
-            return std::string("OpenSSL error queue is empty");
 
-        ERR_error_string_n(err, buffer, BUFSIZ);
+		Hasher::Error error;
+		error.code = static_cast<int>(err);
+		error.message = what + ": " + std::string(buffer);
 
-        return std::string(buffer);
-    }
+        	return error;
+	}
 
-    const EVP_MD* GetMD(Hasher::Type type)
-    {
-        switch (type) {
-        case Hasher::Type::SHA256:
-            return EVP_sha256();
-        }
+	Hasher::Error MakeError(int code, const char *message) noexcept
+	{
+		Hasher::Error error;
 
-        return nullptr;
-    }
+		error.code = code;
+		error.message = std::string(message);
 
-    size_t GetMDSize(Hasher::Type type)
-    {
-        switch (type) {
-        case Hasher::Type::SHA256:
-            return SHA256_DIGEST_LENGTH;
-        }
+		return error;
+	}
 
-        return 0;
-    }
+	const EVP_MD* ResolveMD(Hasher::Type type)
+	{
+		switch (type) {
+		case Hasher::Type::SHA256:
+			return EVP_sha256();
+		case Hasher::Type::SHA512:
+			return EVP_sha512();
+		}
+
+		return nullptr;
+	}
+
+	size_t GetMDSize(Hasher::Type type)
+	{
+		switch (type) {
+		case Hasher::Type::SHA256:
+			return SHA256_DIGEST_LENGTH;
+		case Hasher::Type::SHA512:
+			return SHA512_DIGEST_LENGTH;
+		}
+
+		return 0;
+	}
 }
 
 Hasher::Hasher(Type type)
-    : type_(type)
-    , md_(GetMD(type_))
-    , ctx_(nullptr)
+	: type_(type)
+	, md_(ResolveMD(type))
+	, ctx_(nullptr)
 {
 }
 
 Hasher::~Hasher()
 {
-    if (ctx_ != nullptr)
-        EVP_MD_CTX_free(ctx_);
+	if (ctx_) {
+		EVP_MD_CTX_free(ctx_);
+		ctx_ = nullptr;
+	}
 }
 
-std::optional<std::string> Hasher::Init()
+Hasher::Hasher(Hasher&& other) noexcept
+	: type_(other.type_)
+	, md_(other.md_)
+	, ctx_(other.ctx_)
 {
-    if (!md_)
-        return std::string("Unknown EVP_MD type");
-
-    ctx_ = EVP_MD_CTX_new();
-    if (!ctx_)
-        return fmt::format("failed to EVP_MD_CTX_new(): ", last_error_string());
-
-    if (EVP_DigestInit_ex(ctx_, md_, nullptr) != 1) {
-        EVP_MD_CTX_free(ctx_);
-        ctx_ = nullptr;
-        return fmt::format("failed to EVP_DigestInit_ex(): ", last_error_string());
-    }
-
-    return std::nullopt;
+	other.md_ = nullptr;
+	other.ctx_ = nullptr;
 }
 
-std::optional<std::string> Hasher::Hash(const char* buffer, const size_t size)
+Hasher& Hasher::operator=(Hasher&& other) noexcept
 {
-    if (EVP_DigestUpdate(ctx_, buffer, size) != 1)
-        return fmt::format("failed to EVP_DigestUpdate(): ", last_error_string());
+	if (this == &other)
+		return *this;
 
-    return std::nullopt;
+	if (ctx_) {
+		EVP_MD_CTX_free(ctx_);
+		ctx_ = nullptr;
+	}
+
+	type_ = other.type_;
+	md_   = other.md_;
+	ctx_  = other.ctx_;
+
+	other.md_  = nullptr;
+	other.ctx_ = nullptr;
+
+	return *this;
 }
 
-std::optional<std::string> Hasher::Hash(const std::string_view data)
+std::optional<Hasher::Error> Hasher::Initialize() noexcept
 {
-    return Hash(data.data(), data.size());
+	if (!md_)
+		return MakeError(-1, "Unsupported hash type");
+
+	ctx_ = EVP_MD_CTX_new();
+	if (!ctx_)
+		return GetLastError("EVP_MD_CTX_new failed");
+
+	if (EVP_DigestInit_ex(ctx_, md_, nullptr) != 1)
+		return GetLastError("EVP_DigestInit_ex failed");
+
+	return std::nullopt;
 }
 
-std::optional<std::string> Hasher::Final(std::string& out)
+std::optional<Hasher::Error> Hasher::Update(const char* buffer,
+					    const size_t size) noexcept
 {
-    unsigned int md_len = 0;
+	if (!buffer && size != 0)
+		return MakeError(-3, "Update received null buffer with non-zero size");
 
-    out.resize(GetMDSize(type_));
-    if (EVP_DigestFinal_ex(ctx_, (unsigned char*)out.data(), &md_len) != 1)
-        return fmt::format("failed to EVP_DigestFinal_ex(): {}", last_error_string());
+	if (size == 0)
+		return std::nullopt;
 
-    return std::nullopt;
+	if (EVP_DigestUpdate(ctx_, buffer, size) != 1)
+		return GetLastError("EVP_DigestUpdate failed");
+
+	return std::nullopt;
+}
+
+std::optional<Hasher::Error> Hasher::Update(const std::string& data) noexcept
+{
+	return Update(data.data(), data.size());
+}
+
+std::tuple<bool, std::vector<uint8_t>, Hasher::Error> Hasher::Finalize() noexcept
+{
+	unsigned int out_len = EVP_MD_size(md_);
+	if (out_len == 0U || out_len > 1024U) {
+		return {
+			false,
+			{},
+			MakeError(-4, "Invalid digest size")
+		};
+	}
+
+	std::vector<uint8_t> digest(out_len);
+
+	if (EVP_DigestFinal_ex(ctx_, digest.data(), &out_len) != 1) {
+		return {
+			false,
+			{},
+			GetLastError("EVP_DigestFinal_ex failed")
+		};
+	}
+
+	digest.resize(out_len);
+
+	return { true, std::move(digest), Hasher::Error{0, ""} };
 }
