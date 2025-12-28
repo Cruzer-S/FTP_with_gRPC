@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "Hash.proto";
+import "File.proto";
+
+service FTPService {
+  rpc UploadFile(stream FileUploadStream) returns (FileUploadResult);
+}
+
+message FileUploadStream {
+  string filepath = 1;
+  uint64 filesize = 2;
+  bytes  chunk = 3;
+  HashType hashtype = 4;
+}
+
+message FileUploadResult {
+  FileMetaData metadata = 1;
+  Hash hash = 2;
+}

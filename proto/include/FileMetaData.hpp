@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol.pb.h"
+#include "File.pb.h"
 
 #include <filesystem>
 #include <string>

@@ -6,12 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(Protobuf REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 
-set(GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+set(GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(GEN_SRCS "")
 set(GEN_HDRS "")
 
 file(GLOB PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/*.proto)
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/source/*.cpp)
+
+file(MAKE_DIRECTORY ${GEN_DIR})
 
 foreach(PROTO ${PROTO_FILES})
         get_filename_component(PROTO_NAME ${PROTO} NAME_WE)

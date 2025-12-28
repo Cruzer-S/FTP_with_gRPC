@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message FileMetaData {
+  string                    path        = 1;
+  uint64                    size        = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp modify_time = 4;
+  google.protobuf.Timestamp access_time = 5;
+}
