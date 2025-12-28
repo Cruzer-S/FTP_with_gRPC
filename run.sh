@@ -1,7 +1,10 @@
 #!/bin/bash
 
-BASE=$(dirname ${0})
+BASE=$(dirname $(realpath ${0}))
 echo "BASE: ${BASE}"
+
+cmake -S . -B build
+cmake --build build/
 
 if [ "$1" == "Server" ]; then
 	${BASE}/build/Server/Server --root-dir=${BASE} --loglevel 5 127.0.0.1 1584
