@@ -1,22 +1,69 @@
 #include "FTPServiceImpl.hpp"
 
+#include <cmath>
+#include <system_error>
+#include <string_view>
 #include <filesystem>
-#include <fstream>
+#include <optional>
 #include <string>
 #include <tuple>
 
 #include <cstring>
 
-#include "spdlog/fmt/bin_to_hex.h"
-#include "spdlog/spdlog.h"
-#include "grpcpp/grpcpp.h"
-
-#include "HashFileStream.hpp"
 #include "FileMetaData.hpp"
+
+#include "ftp_service.pb.h"
+#include "file.pb.h"
+
+#include "grpcpp/support/status.h"
 
 namespace fs = std::filesystem;
 
-using StreamPtr = std::unique_ptr<HashFileStream>;
+namespace {
+static std::optional<Hasher::Type> MapHasherType(HashType t) noexcept
+{
+    switch (t) {
+    case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
+    case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
+    default: return std::nullopt;
+    }
+}
+
+static grpc::Status InvalidArg(std::string msg)
+{
+    return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, std::move(msg));
+}
+
+static grpc::Status Internal(std::string msg)
+{
+    return grpc::Status(grpc::StatusCode::INTERNAL, std::move(msg));
+}
+
+static std::optional<Hasher::Type> MapHashTypeOptional(const UploadInit& init)
+{
+    if (!init.has_hashtype())
+        return std::nullopt;
+
+    switch (init.hashtype()) {
+    case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
+    case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
+    case HASH_TYPE_UNSPECIFIED:
+    default:
+        return std::nullopt;
+    }
+}
+
+static bool HashLengthMatches(HashType t, size_t n)
+{
+    switch (t) {
+    case HASH_TYPE_SHA256: return n == 32;
+    case HASH_TYPE_SHA512: return n == 64;
+    case HASH_TYPE_UNSPECIFIED:
+    default:
+	return n == 0;
+    }
+}
+} // namespace
 
 FTPServiceImpl::FTPServiceImpl(const std::string_view root_dir)
     : root_dir_(root_dir)
@@ -25,102 +72,176 @@ FTPServiceImpl::FTPServiceImpl(const std::string_view root_dir)
 
 bool FTPServiceImpl::IsValid() const noexcept
 {
-    return fs::is_directory(root_dir_) && fs::exists(root_dir_);
+    std::error_code ec;
+    return !root_dir_.empty()
+        && fs::exists(root_dir_, ec)
+        && fs::is_directory(root_dir_, ec);
 }
 
-grpc::Status FTPServiceImpl::UploadFile(grpc::ServerContext* context, grpc::ServerReader<File>* reader, FileMetaData* response)
+grpc::Status FTPServiceImpl::UploadFile(grpc::ServerContext* context,
+                                        grpc::ServerReader<UploadFileRequest>* reader,
+                                        UploadFileResponse* response)
 {
-    using Status = grpc::Status;
+    auto [ok_open, session, st_open] = OpenFile(reader);
+    if (!ok_open)
+        return st_open;
 
-    spdlog::info("UploadFile() invoked");
+    auto [ok_write, st_write] = WriteToFile(reader, session);
+    if (!ok_write)
+            return st_write;
 
-    auto stream = OpenFile(reader);
-    if (const auto status = std::get_if<Status>(&stream)) {
-        spdlog::warn("failed to OpenFile(): {}", status->error_message());
-        return *status;
-    }
-    spdlog::info("open file ({}) successfully", std::get<StreamPtr>(stream)->GetPath().c_str());
+    auto [ok_hash, metadata, st_meta] = CheckHash(reader, session);
+    if (!ok_hash)
+        return st_meta;
 
-    auto hash = WriteToFile(reader, std::get<StreamPtr>(stream));
-    if (const auto status = std::get_if<Status>(&hash)) {
-        spdlog::warn("failed to WriteToFile(): {}", status->error_message());
-        return *status;
-    }
-    spdlog::info("write all file chunk(s): hash {}", spdlog::to_hex(std::get<std::string>(hash).begin(), std::get<std::string>(hash).end()));
+    *response->mutable_metadata() = std::move(metadata);
+    Hash hash_out;
+    hash_out.set_hashtype(session.hash_type);
+    hash_out.set_data(session.GetHash()->data(), session.GetHash()->size());
+    *response->mutable_hash() = hash_out;
 
-    if (const auto failed = std::get<StreamPtr>(stream)->Close()) {
-        spdlog::warn("failed to close file: {}", *failed);
-        return grpc::Status(grpc::StatusCode::INTERNAL, "failed to close file: {}", *failed);
-    }
-
-    auto metadata = CheckHash(std::get<StreamPtr>(stream), std::get<std::string>(hash));
-    if (const auto status = std::get_if<Status>(&metadata)) {
-        spdlog::warn("failed to CheckHash(): {}", status->error_message());
-        return *status;
-    }
-    spdlog::info("hash check complete");
-
-    response->CopyFrom(std::get<FileMetaData>(metadata));
-    spdlog::info("upload file successfully: \n{}", FileMetaDataToString(std::get<FileMetaData>(metadata)));
-
-    return Status::OK;
+    return grpc::Status::OK;
 }
 
-std::variant<grpc::Status, StreamPtr> FTPServiceImpl::OpenFile(grpc::ServerReader<File>* reader) noexcept
+std::tuple<bool, UploadSession, grpc::Status>
+FTPServiceImpl::OpenFile(grpc::ServerReader<UploadFileRequest>* reader) noexcept
 {
-    File file; reader->Read(&file);
+    UploadSession session;
 
-    if (!file.has_path())
-        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "You did not send path");
-    if (file.has_hash() || file.has_chunk())
-        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "You send unncessary data");
+    UploadFileRequest first;
+    if (!reader->Read(&first))
+        return { false, std::move(session), InvalidArg("empty request stream") };
 
-    auto stream = std::make_unique<HashFileStream>(file.path(), Hasher(Hasher::Type::SHA256));
-    if (const auto failed_to_open = stream->Open(std::ios::out | std::ios::binary | std::ios::trunc))
-        return grpc::Status(grpc::StatusCode::INTERNAL, fmt::format("failed to open file({}): {}", file.path(), *failed_to_open));
+    if (first.request_case() != UploadFileRequest::kInit)
+        return { false, std::move(session), InvalidArg("first message must be init") };
 
-    return std::move(stream);
+    const UploadInit& init = first.init();
+
+    if (init.filepath().empty())
+	return { false, std::move(session), InvalidArg("init.filepath is empty") };
+
+    const std::filesystem::path path = init.filepath();
+    if (!path.is_absolute())
+	return { false, std::move(session), InvalidArg("init.filepath must be an absolute path") };
+
+    if (!std::filesystem::exists(path.parent_path()))
+	return { false, std::move(session), InvalidArg("init.filepath can't be created (no such directory)") };
+
+    session.path = path;
+
+    session.touch_only = !init.has_filesize();
+    session.expected_size = init.has_filesize() ? init.filesize() : 0;
+
+    session.hashing_enabled = init.has_hashtype() && (init.hashtype() != HASH_TYPE_UNSPECIFIED);
+    session.hash_type = session.hashing_enabled ? init.hashtype() : HASH_TYPE_UNSPECIFIED;
+
+    if (session.hashing_enabled && session.touch_only)
+	return { false, std::move(session), InvalidArg("") };
+
+    if (session.hashing_enabled) {
+        auto opt = MapHasherType(session.hash_type);
+        if (!opt)
+            return { false, std::move(session), InvalidArg("invalid hashtype") };
+
+        session.hashing = std::make_unique<HashingFileStream>(session.path, *opt);
+    } else {
+        session.plain = std::make_unique<FileStream>(session.path);
+    }
+
+    if (auto err = session.Open(std::ios::binary | std::ios::out | std::ios::trunc))
+       return { false, std::move(session), Internal("open failed: " + err->message) };
+
+    return { true, std::move(session), grpc::Status::OK };
 }
 
-std::variant<grpc::Status, std::string> FTPServiceImpl::WriteToFile(
-    grpc::ServerReader<File>* reader, StreamPtr& stream
-) noexcept
+std::tuple<bool, grpc::Status> FTPServiceImpl::WriteToFile(grpc::ServerReader<UploadFileRequest>* reader, UploadSession& session) noexcept
 {
-    using namespace grpc;
+    const uint64_t expected = session.expected_size;
+    uint64_t total = 0;
 
-    File file;
+    UploadFileRequest req;
+    while (total < expected && reader->Read(&req)) {
+        switch (req.request_case()) {
+        case UploadFileRequest::kChunk: {
+            const std::string& data = req.chunk().data();
+            if (data.empty())
+	        break;
 
-    while (reader->Read(&file)) {
-        if (file.has_path())
-            return Status(StatusCode::INVALID_ARGUMENT, "You send unncessary data");
+            const uint64_t add = static_cast<uint64_t>(data.size());
+            if (total + add > expected)
+                return { false, InvalidArg("received more bytes than filesize") };
 
-        if (!file.has_chunk()) {
-            if (file.has_hash())
-                return file.hash();
+            if (auto err = session.Write(std::string_view(data.data(), data.size())))
+                return { false, Internal("write failed: " + err->message) };
 
-            return Status(StatusCode::INVALID_ARGUMENT, "You did not send chunk");
+            total += add;
+            break;
         }
 
-        if (const auto failed_to_write = stream->Write(file.chunk()))
-            return Status(StatusCode::INTERNAL, *failed_to_write);
+        case UploadFileRequest::kFinish:
+            return { false, InvalidArg("finish must appear only as the last message") };
+
+        case UploadFileRequest::kInit:
+            return { false, InvalidArg("init must appear only as the first message") };
+
+        case UploadFileRequest::REQUEST_NOT_SET:
+        default:
+            return { false, InvalidArg("invalid request") };
+        }
+
+        if (total == expected)
+            break;
     }
 
-    return { Status(StatusCode::CANCELLED, "cancelled from client") };
+    if (total != expected)
+        return { false, InvalidArg("stream ended before receiving filesize bytes") };
+
+    if (auto err = session.Close())
+        return { false, Internal("close failed: " + err->message) };
+
+    return { true, grpc::Status::OK };
 }
 
-std::variant<grpc::Status, FileMetaData> FTPServiceImpl::CheckHash(
-    StreamPtr& stream, const std::string_view client_hash
-) noexcept
+std::tuple<bool, FileMetaData, grpc::Status>
+FTPServiceImpl::CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const UploadSession& session) noexcept
 {
-    auto local_hash = stream->GetHash();
-    if (!local_hash)
-        return grpc::Status(grpc::StatusCode::DATA_LOSS, "failed to retrieve hash");
+    const FileMetaData metadata = MakeFileMetaDataFrom(session.path);
 
-    if (local_hash->size() != client_hash.size())
-        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "incompatible hash type/size");
+    if (!session.hashing_enabled) {
+	if (session.touch_only)
+	    return { true, std::move(metadata), grpc::Status::OK };
 
-    if (std::memcmp(local_hash->data(), client_hash.data(), local_hash->size()))
-        return grpc::Status(grpc::StatusCode::DATA_LOSS, "hash value does not match");
+	if (metadata.size() != session.expected_size)
+            return { false, FileMetaData{}, InvalidArg("file size mismatch after write") };
 
-    return MakeFileMetaDataFrom(stream->GetPath(), *local_hash);
+	return { true, std::move(metadata), grpc::Status::OK };
+    }
+
+    UploadFileRequest last;
+    if (!reader->Read(&last))
+        return { false, FileMetaData{}, InvalidArg("failed to read last request") };
+
+    if (last.request_case() != UploadFileRequest::kFinish)
+	return { false, FileMetaData{}, InvalidArg("finish must be the last message") };
+
+    if (!last.finish().has_hash())
+        return { false, FileMetaData{}, InvalidArg("failed to read hash") };
+
+    const auto hash_opt = session.GetHash();
+    if (!hash_opt)
+	return { false, FileMetaData{}, Internal("failed to read server hash") };
+
+    const std::vector<uint8_t> server_hash = *hash_opt;
+    const Hash &expected = last.finish().hash();
+    if (expected.hashtype() != session.hash_type)
+        return { false, FileMetaData{}, InvalidArg("finish.hash.hashtype mismatch with init.hashtype") };
+
+    if (!HashLengthMatches(expected.hashtype(), static_cast<size_t>(expected.data().size())))
+        return { false, FileMetaData{}, InvalidArg("finish.hash.data length does not match hashtype") };
+
+    if (expected.data().size() != server_hash.size()  ||
+        std::memcmp(expected.data().data(), server_hash.data(), expected.data().size()) != 0)
+	return { false, FileMetaData{}, grpc::Status(grpc::StatusCode::DATA_LOSS, "hash mismatch") };
+    
+    return { true, std::move(metadata), grpc::Status::OK };
 }

@@ -1,4 +1,3 @@
-#include <iostream>
 #include <variant>
 #include <string>
 #include <map>
@@ -12,7 +11,7 @@
 
 using ArgList = std::map<std::string, std::string>;
 
-std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
+std::pair<bool, std::variant<ArgList, std::string>> ParseArgument(int argc, char* argv[])
 {
     ArgList arglist;
 
@@ -33,19 +32,19 @@ std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
                 arglist["root-dir"] = optarg;
                 break;
             case ':':
-                return fmt::format("missing argument: {}", static_cast<char>(opt));
+                return { false, fmt::format("missing argument: {}", static_cast<char>(opt)) };
             case '?':
-                return fmt::format("invalid argument: {}", static_cast<char>(opt));
+                return { false, fmt::format("invalid argument: {}", static_cast<char>(opt)) };
             }
         }
     }
     catch (std::exception& e) {
-        return fmt::format("invalid argument: {}", e.what());
+        return { false, fmt::format("invalid argument: {}", e.what()) };
     }
 
     argc -= optind;
     if (argc < 2)
-        return fmt::format("usage: {} [--loglevel <level>] [--root-dir <directory>] <host> <service>", *argv);
+        return { false, fmt::format("usage: {} [--loglevel <level>] [--root-dir <directory>] <host> <service>", *argv) };
 
     argv += optind;
 
@@ -58,27 +57,24 @@ std::variant<ArgList, std::string> ParseArgument(int argc, char* argv[])
     if (arglist.find("loglevel") == arglist.end())
         arglist["loglevel"] = "0";
 
-    return arglist;
+    return { true, arglist };
 }
 
 void ShowArgument(const ArgList& arglist)
 {
-    spdlog::info(fmt::format("Host: {}\tService: {}", arglist.at("host"), arglist.at("service")));
-    if (arglist.find("loglevel") != arglist.end())
-        spdlog::info(fmt::format("Log Level: {}", arglist.at("loglevel")));
-    if (arglist.find("root-dir") != arglist.end())
-        spdlog::info(fmt::format("Root Directory: {}", arglist.at("root-dir")));
+    for (const auto &[name, value]: arglist)
+	    spdlog::info("{}: {}", name, value);
 }
 
 int main(int argc, char* argv[])
 {
-    const auto out = ParseArgument(argc, argv);
-    if (const auto failed_to_parse = std::get_if<std::string>(&out)) {
-        spdlog::error("failed to ParseArgument(): {}", *failed_to_parse);
+    const auto &[success, result] = ParseArgument(argc, argv);
+    if (!success) {
+        spdlog::error("failed to ParseArgument(): {}", std::get<std::string>(result));
         return 1;
     }
 
-    const ArgList& arglist = std::get<ArgList>(out);
+    const ArgList& arglist = std::get<ArgList>(result);
     ShowArgument(arglist);
 
     FTPServiceImpl service(arglist.at("root-dir"));
@@ -95,7 +91,7 @@ int main(int argc, char* argv[])
     std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
     spdlog::info("server started: listening on {}:{}", arglist.at("host"), arglist.at("service"));
 
-    (void)getchar();
+    server->Wait();
 
     server->Shutdown();
 

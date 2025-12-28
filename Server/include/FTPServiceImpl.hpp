@@ -1,17 +1,13 @@
 #pragma once
 
-#include "protocol.grpc.pb.h"
+#include "ftp_service.grpc.pb.h"
+#include "ftp_service.pb.h"
+#include "file.pb.h"
 
-#include <optional>
-#include <variant>
-#include <atomic>
 #include <string>
-#include <map>
+#include <tuple>
 
-#include "google/protobuf/empty.pb.h"
-#include "google/protobuf/timestamp.pb.h"
-
-#include "HashFileStream.hpp"
+#include "UploadSession.hpp"
 
 class FTPServiceImpl final : public FTPService::Service
 {
@@ -22,13 +18,13 @@ public:
         bool IsValid() const noexcept;
 
 private:
-        grpc::Status UploadFile(grpc::ServerContext* context, grpc::ServerReader<File>* reader, FileMetaData* response) override;
+        grpc::Status UploadFile(grpc::ServerContext* context, grpc::ServerReader<UploadFileRequest>* reader, UploadFileResponse* response) override;
 
 private:
-        std::variant<grpc::Status, std::unique_ptr<HashFileStream>> OpenFile(grpc::ServerReader<File>* reader) noexcept;
-        std::variant<grpc::Status, std::string> WriteToFile(grpc::ServerReader<File>* reader, std::unique_ptr<HashFileStream>& stream) noexcept;
-        std::variant<grpc::Status, FileMetaData> CheckHash(std::unique_ptr<HashFileStream>& stream, const std::string_view hash) noexcept;
-
+	std::tuple<bool, UploadSession, grpc::Status> OpenFile(grpc::ServerReader<UploadFileRequest>* reader) noexcept;
+	std::tuple<bool, grpc::Status> WriteToFile(grpc::ServerReader<UploadFileRequest>* reader, UploadSession& session) noexcept;
+	std::tuple<bool, FileMetaData, grpc::Status> CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const UploadSession& session) noexcept;
+	
 private:
         const std::string root_dir_;
 };

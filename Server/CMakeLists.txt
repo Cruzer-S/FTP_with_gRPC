@@ -16,11 +16,10 @@ target_include_directories(Server PRIVATE
 )
 
 target_link_libraries(Server PRIVATE
-        protocol
+	FTPService
         FileStream
         gRPC::grpc++
         spdlog
         fmt
-        stdc++fs
         ${Protobuf_LIBRARIES}
 )
