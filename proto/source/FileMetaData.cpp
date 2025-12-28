@@ -1,8 +1,6 @@
 #include "FileMetaData.hpp"
 
 #include <filesystem>
-#include <iostream>
-#include <string>
 
 #include <sys/stat.h>
 
@@ -21,15 +19,14 @@ namespace {
     }
 
     enum class FileTimeKind {
-        Atime,
-        Mtime,
-        Ctime
+        Atime, Mtime, Ctime
     };
 
-    google::protobuf::Timestamp PathToTimestamp(const std::string_view path, FileTimeKind kind) {
+    google::protobuf::Timestamp PathToTimestamp(const std::filesystem::path &path, FileTimeKind kind) {
         struct stat st;
 
-        stat(path.data(), &st);
+        if (stat(path.c_str(), &st) != 0)
+		return {};
 
         switch (kind) {
         case FileTimeKind::Atime:
@@ -51,24 +48,9 @@ FileMetaData MakeFileMetaDataFrom(const std::filesystem::path& from)
     data.set_path(from);
     data.set_size(std::filesystem::file_size(from));
 
-    data.mutable_create_time()->CopyFrom(PathToTimestamp(from.c_str(), FileTimeKind::Ctime));
-    data.mutable_modify_time()->CopyFrom(PathToTimestamp(from.c_str(), FileTimeKind::Mtime));
-    data.mutable_access_time()->CopyFrom(PathToTimestamp(from.c_str(), FileTimeKind::Atime));
+    data.mutable_create_time()->CopyFrom(PathToTimestamp(from, FileTimeKind::Ctime));
+    data.mutable_modify_time()->CopyFrom(PathToTimestamp(from, FileTimeKind::Mtime));
+    data.mutable_access_time()->CopyFrom(PathToTimestamp(from, FileTimeKind::Atime));
 
     return data;
-}
-
-std::string FileMetaDataToString(const FileMetaData& metadata)
-{
-    using google::protobuf::util::TimeUtil;
-
-    std::stringstream ss;
-
-    ss << "path: " << metadata.path() << std::endl;
-    ss << "size: " << metadata.size() << std::endl;
-    ss << "ctime: " << TimeUtil::ToString(metadata.create_time()) << std::endl;
-    ss << "mtime: " << TimeUtil::ToString(metadata.modify_time()) << std::endl;
-    ss << "atime: " << TimeUtil::ToString(metadata.access_time()) << std::endl;
-
-    return ss.str();
 }
