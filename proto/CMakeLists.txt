@@ -9,7 +9,7 @@ find_package(gRPC CONFIG REQUIRED)
 set(GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(GEN_SRCS "")
 set(GEN_HDRS "")
-set(LIB_NAME "FTPServiceProto")
+set(LIB_NAME "FTPService")
 
 file(GLOB PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/*.proto)
 file(GLOB PROTOCOL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/source/*.cpp)
