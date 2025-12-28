@@ -221,6 +221,10 @@ FTPServiceImpl::CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const U
     if (!reader->Read(&last))
         return { false, FileMetaData{}, InvalidArg("failed to read last request") };
 
+    UploadFileRequest extra;
+    if (!reader->Read(&last))
+        return { false, FileMetaData{}, InvalidArg("extra messages after finish are not allowed") };
+
     if (last.request_case() != UploadFileRequest::kFinish)
 	return { false, FileMetaData{}, InvalidArg("finish must be the last message") };
 
