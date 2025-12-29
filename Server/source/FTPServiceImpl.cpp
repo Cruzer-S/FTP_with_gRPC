@@ -1,6 +1,5 @@
 #include "FTPServiceImpl.hpp"
 
-#include <cmath>
 #include <system_error>
 #include <string_view>
 #include <filesystem>
@@ -118,14 +117,14 @@ FTPServiceImpl::OpenFile(grpc::ServerReader<UploadFileRequest>* reader) noexcept
     const UploadInit& init = first.init();
 
     if (init.filepath().empty())
-	return { false, std::move(session), InvalidArg("init.filepath is empty") };
+		return { false, std::move(session), InvalidArg("init.filepath is empty") };
 
     const std::filesystem::path path = init.filepath();
     if (!path.is_absolute())
-	return { false, std::move(session), InvalidArg("init.filepath must be an absolute path") };
+		return { false, std::move(session), InvalidArg("init.filepath must be an absolute path") };
 
     if (!std::filesystem::exists(path.parent_path()))
-	return { false, std::move(session), InvalidArg("init.filepath can't be created (no such directory)") };
+		return { false, std::move(session), InvalidArg("init.filepath can't be created (no such directory)") };
 
     session.path = path;
 
@@ -136,7 +135,7 @@ FTPServiceImpl::OpenFile(grpc::ServerReader<UploadFileRequest>* reader) noexcept
     session.hash_type = session.hashing_enabled ? init.hashtype() : HASH_TYPE_UNSPECIFIED;
 
     if (session.hashing_enabled && session.touch_only)
-	return { false, std::move(session), InvalidArg("") };
+		return { false, std::move(session), InvalidArg("") };
 
     if (session.hashing_enabled) {
         auto opt = MapHasherType(session.hash_type);
@@ -165,7 +164,7 @@ std::tuple<bool, grpc::Status> FTPServiceImpl::WriteToFile(grpc::ServerReader<Up
         case UploadFileRequest::kChunk: {
             const std::string& data = req.chunk().data();
             if (data.empty())
-	        break;
+				break;
 
             const uint64_t add = static_cast<uint64_t>(data.size());
             if (total + add > expected)
@@ -208,13 +207,13 @@ FTPServiceImpl::CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const U
     const FileMetaData metadata = MakeFileMetaDataFrom(session.path);
 
     if (!session.hashing_enabled) {
-	if (session.touch_only)
-	    return { true, std::move(metadata), grpc::Status::OK };
+		if (session.touch_only)
+			return { true, std::move(metadata), grpc::Status::OK };
 
-	if (metadata.size() != session.expected_size)
-            return { false, FileMetaData{}, InvalidArg("file size mismatch after write") };
+		if (metadata.size() != session.expected_size)
+			return { false, FileMetaData{}, InvalidArg("file size mismatch after write") };
 
-	return { true, std::move(metadata), grpc::Status::OK };
+		return { true, std::move(metadata), grpc::Status::OK };
     }
 
     UploadFileRequest last;
@@ -226,14 +225,14 @@ FTPServiceImpl::CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const U
         return { false, FileMetaData{}, InvalidArg("extra messages after finish are not allowed") };
 
     if (last.request_case() != UploadFileRequest::kFinish)
-	return { false, FileMetaData{}, InvalidArg("finish must be the last message") };
+		return { false, FileMetaData{}, InvalidArg("finish must be the last message") };
 
     if (!last.finish().has_hash())
         return { false, FileMetaData{}, InvalidArg("failed to read hash") };
 
     const auto hash_opt = session.GetHash();
     if (!hash_opt)
-	return { false, FileMetaData{}, Internal("failed to read server hash") };
+		return { false, FileMetaData{}, Internal("failed to read server hash") };
 
     const std::vector<uint8_t> server_hash = *hash_opt;
     const Hash &expected = last.finish().hash();
