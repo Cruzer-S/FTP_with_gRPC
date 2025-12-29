@@ -245,7 +245,7 @@ FTPServiceImpl::CheckHash(grpc::ServerReader<UploadFileRequest>* reader, const U
 
     if (expected.data().size() != server_hash.size()  ||
         std::memcmp(expected.data().data(), server_hash.data(), expected.data().size()) != 0)
-	return { false, FileMetaData{}, grpc::Status(grpc::StatusCode::DATA_LOSS, "hash mismatch") };
+		return { false, FileMetaData{}, grpc::Status(grpc::StatusCode::DATA_LOSS, "hash mismatch") };
     
     return { true, std::move(metadata), grpc::Status::OK };
 }
