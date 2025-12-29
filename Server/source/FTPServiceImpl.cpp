@@ -9,12 +9,14 @@
 
 #include <cstring>
 
+#include "spdlog/fmt/bin_to_hex.h"
+#include "spdlog/spdlog.h"
+
 #include "FileMetaData.hpp"
 
 #include "ftp_service.pb.h"
+#include "hash.pb.h"
 #include "file.pb.h"
-
-#include "grpcpp/support/status.h"
 
 namespace fs = std::filesystem;
 
@@ -81,23 +83,39 @@ grpc::Status FTPServiceImpl::UploadFile(grpc::ServerContext* context,
                                         grpc::ServerReader<UploadFileRequest>* reader,
                                         UploadFileResponse* response)
 {
+	spdlog::info("UploadFile() service invoked");
+
     auto [ok_open, session, st_open] = OpenFile(reader);
-    if (!ok_open)
+    if (!ok_open) {
+		spdlog::error("failed to open file: {}", st_open.error_message());
         return st_open;
+	}
+	spdlog::info("open file successfully: {} (hash: {}) (size: {})",
+				 session.path.c_str(), HashType_Name(session.hash_type),
+				 session.expected_size);
 
     auto [ok_write, st_write] = WriteToFile(reader, session);
-    if (!ok_write)
-            return st_write;
+    if (!ok_write) {
+		spdlog::error("failed to wrtie file: {}", st_write.error_message());
+        return st_write;
+	}
+	spdlog::info("write file data successfully: {}",
+				 MakeFileMetaDataFrom(session.path).DebugString());
 
     auto [ok_hash, metadata, st_meta] = CheckHash(reader, session);
-    if (!ok_hash)
+    if (!ok_hash) {
+		spdlog::error("failed to check hash: {}", st_meta.error_message());
         return st_meta;
+	}
+	spdlog::info("hash check complete: {}", spdlog::to_hex(*session.GetHash()));
 
     Hash hash_out;
     hash_out.set_hashtype(session.hash_type);
     hash_out.set_data(session.GetHash()->data(), session.GetHash()->size());
     *response->mutable_hash() = hash_out;
     *response->mutable_metadata() = std::move(metadata);
+
+	spdlog::info("UploadFile() result: \n{}", response->DebugString());
 
     return grpc::Status::OK;
 }
