@@ -93,11 +93,11 @@ grpc::Status FTPServiceImpl::UploadFile(grpc::ServerContext* context,
     if (!ok_hash)
         return st_meta;
 
-    *response->mutable_metadata() = std::move(metadata);
     Hash hash_out;
     hash_out.set_hashtype(session.hash_type);
     hash_out.set_data(session.GetHash()->data(), session.GetHash()->size());
     *response->mutable_hash() = hash_out;
+    *response->mutable_metadata() = std::move(metadata);
 
     return grpc::Status::OK;
 }
