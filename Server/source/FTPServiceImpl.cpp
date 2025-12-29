@@ -19,50 +19,50 @@
 namespace fs = std::filesystem;
 
 namespace {
-static std::optional<Hasher::Type> MapHasherType(HashType t) noexcept
-{
-    switch (t) {
-    case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
-    case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
-    default: return std::nullopt;
-    }
-}
+	static std::optional<Hasher::Type> MapHasherType(HashType t) noexcept
+	{
+		switch (t) {
+		case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
+		case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
+		default: return std::nullopt;
+		}
+	}
 
-static grpc::Status InvalidArg(std::string msg)
-{
-    return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, std::move(msg));
-}
+	static grpc::Status InvalidArg(std::string msg)
+	{
+		return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, std::move(msg));
+	}
 
-static grpc::Status Internal(std::string msg)
-{
-    return grpc::Status(grpc::StatusCode::INTERNAL, std::move(msg));
-}
+	static grpc::Status Internal(std::string msg)
+	{
+		return grpc::Status(grpc::StatusCode::INTERNAL, std::move(msg));
+	}
 
-static std::optional<Hasher::Type> MapHashTypeOptional(const UploadInit& init)
-{
-    if (!init.has_hashtype())
-        return std::nullopt;
+	static std::optional<Hasher::Type> MapHashTypeOptional(const UploadInit& init)
+	{
+		if (!init.has_hashtype())
+			return std::nullopt;
 
-    switch (init.hashtype()) {
-    case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
-    case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
-    case HASH_TYPE_UNSPECIFIED:
-    default:
-        return std::nullopt;
-    }
-}
+		switch (init.hashtype()) {
+		case HASH_TYPE_SHA256: return Hasher::Type::SHA256;
+		case HASH_TYPE_SHA512: return Hasher::Type::SHA512;
+		case HASH_TYPE_UNSPECIFIED:
+		default:
+			return std::nullopt;
+		}
+	}
 
-static bool HashLengthMatches(HashType t, size_t n)
-{
-    switch (t) {
-    case HASH_TYPE_SHA256: return n == 32;
-    case HASH_TYPE_SHA512: return n == 64;
-    case HASH_TYPE_UNSPECIFIED:
-    default:
-	return n == 0;
-    }
+	static bool HashLengthMatches(HashType t, size_t n)
+	{
+		switch (t) {
+		case HASH_TYPE_SHA256: return n == 32;
+		case HASH_TYPE_SHA512: return n == 64;
+		case HASH_TYPE_UNSPECIFIED:
+		default:
+			return n == 0;
+		}
+	}
 }
-} // namespace
 
 FTPServiceImpl::FTPServiceImpl(const std::string_view root_dir)
     : root_dir_(root_dir)
