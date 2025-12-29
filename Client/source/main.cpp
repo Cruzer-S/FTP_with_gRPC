@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
 	FTPClient client(channel);
 
 	const auto [success_upload, metadata, status] = client.UploadFile(arglist.at("infile"), arglist.at("outpath"), HashType::HASH_TYPE_SHA256);
-	if (success_upload) {
+	if (!success_upload) {
 		spdlog::error("failed to upload file: {}", status.message);
 		return 1;
 	}

@@ -1,13 +1,18 @@
+
+#include <memory>
 #include <variant>
 #include <string>
 #include <map>
 
 #include <getopt.h>
 
+#include <grpcpp/support/server_interceptor.h>
 #include <grpcpp/grpcpp.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "FTPServiceImpl.hpp"
+#include "ServerInterceptor.hpp"
 
 using ArgList = std::map<std::string, std::string>;
 

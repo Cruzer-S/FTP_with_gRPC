@@ -81,8 +81,8 @@ std::optional<HashingFileStream::Error> HashingFileStream::Close() noexcept
 {
     auto [ok, digest, herr] = hasher_.Finalize();
     if (!ok) {
-	(void)file_.Close();
-	return ConvertHasherError(herr);
+		(void)file_.Close();
+		return ConvertHasherError(herr);
     }
 
     digest_ = std::move(digest);

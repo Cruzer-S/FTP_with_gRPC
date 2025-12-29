@@ -70,7 +70,7 @@ FTPClient::UploadFile(const std::string& infile, const std::string& outpath, con
     if (!writer)
         return { false, FileMetaData{}, MakeErr(-1, "failed to create ClientWriter") };
 
-    if (auto err = SendPath(writer, infile, outpath)) {
+    if (auto err = SendPath(writer, infile, outpath, hashtype)) {
         ctx.TryCancel();
         return { false, FileMetaData{}, *err };
     }
@@ -101,7 +101,7 @@ FTPClient::UploadFile(const std::string& infile, const std::string& outpath, con
 std::optional<FTPClient::Error>
 FTPClient::SendFile(WriterPtr& writer, const std::string_view infile, const std::string_view outpath, const HashType &hashtype)
 {
-    if (auto err = SendPath(writer, infile, outpath))
+    if (auto err = SendPath(writer, infile, outpath, hashtype))
         return err;
 
     auto [hash, herr] = SendChunk(writer, infile, hashtype);
@@ -117,7 +117,8 @@ FTPClient::SendFile(WriterPtr& writer, const std::string_view infile, const std:
 std::optional<FTPClient::Error>
 FTPClient::SendPath(WriterPtr& writer,
                     const std::string_view infile,
-                    const std::string_view outpath)
+                    const std::string_view outpath,
+					const HashType &hashtype)
 {
     uintmax_t size = std::filesystem::file_size(infile);
     UploadFileRequest req;
@@ -126,7 +127,7 @@ FTPClient::SendPath(WriterPtr& writer,
     init.set_filepath(std::string(outpath));
     init.set_filesize(size);
 
-    init.set_hashtype(HASH_TYPE_SHA256);
+    init.set_hashtype(hashtype);
 
     *req.mutable_init() = std::move(init);
 
@@ -175,7 +176,7 @@ std::tuple<Hash, FTPClient::Error> FTPClient::SendChunk(
 		return { Hash{}, MakeErr(err->code, "failed to close infile: " + err->message) };
 
     Hash hash;
-    hash.set_hashtype(HASH_TYPE_SHA256);
+    hash.set_hashtype(hashtype);
     hash.set_data(stream.GetHash()->data(), stream.GetHash()->size());
 
     return { std::move(hash), OkError() };

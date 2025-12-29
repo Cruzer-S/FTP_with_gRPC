@@ -70,13 +70,18 @@ std::tuple<bool, std::streamsize, FileStream::Error> FileStream::Read(char* data
     stream_.read(data, size);
     const std::streamsize n = stream_.gcount();
 
-    if (stream_.eof()) {
-        stream_.clear(stream_.rdstate() & ~std::ios::eofbit);
-        return { true, n, Error{} };
-    }
+	if (n > 0) {
+		if (stream_.eof())
+			stream_.clear();
 
-    if (stream_.bad() || stream_.fail())
-        return { false, n, stream_error(stream_, "read") };
+		return { true, n, Error{} };
+	}
+
+	if (stream_.eof())
+		return { true, 0, Error{} };
+
+	if (stream_.bad() || stream_.fail())
+		return { false, 0, stream_error(stream_, "read") };
 
     return { true, n, Error{} };
 }
@@ -86,7 +91,11 @@ std::optional<FileStream::Error> FileStream::Close() noexcept
     if (!stream_.is_open())
         return std::nullopt;
 
-    stream_.close();
+	if (stream_.rdstate() & std::ios::badbit)
+		return stream_error(stream_, "close");
+
+	stream_.clear();
+	stream_.close();
 
     if (stream_.fail() || stream_.bad())
         return stream_error(stream_, "close");
